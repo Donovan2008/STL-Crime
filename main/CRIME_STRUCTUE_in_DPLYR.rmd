@@ -1,0 +1,181 @@
+---
+title: "Small Sample July"
+output: html_notebook
+---
+
+## Install libraries
+```{r, echo=FALSE}
+# install the library packages
+library(rgdal)
+library(sp)
+library(sf)
+library(raster)
+library(leaflet)
+library(leafpop)
+library(mapview)
+library(tidyverse)
+library(censusxy)
+library(tidycensus)
+library(ggplot2)
+library(RColorBrewer)
+library(data.table)
+library(fasttime)
+library(sparklyr)
+library(lubridate)
+library(maps)
+library(stringr)
+```
+
+
+```{r}
+############################## Temporary
+#setwd("C:/users/jd1/Desktop/ALL R Stuff and Research/Test_data_table")
+#####################################################
+# 1.  Collect St Louis City crime UCR statistics
+# pull in state coordinate system files from st louis police reports using data.table
+crime <- fread("C:/users/jd1/Desktop/ALL R Stuff and Research/Test_data_table/Group2018.csv", stringsAsFactors=FALSE)
+```
+## 2. look annd adjust the structure of the data
+
+```{r}
+crimeA <- crime %>% select(Complaint, CodedMonth, 
+                                     DateOccur, Crime, Description, Neighborhood) %>%
+            filter(Crime == 38111) 
+
+```
+
+## User stringr to add a day to the structure in preparation for creating a date field
+```{r}
+crimeA$CodedMonth <- str_c(crimeA$CodedMonth, "28", sep = "-")
+summary(crimeA)
+
+```
+##  Look at the result of the string operation
+```{r}
+
+glimpse(crimeA)
+```
+## create a posix object for occurrance date
+```{r}
+crimeA$DateOccur <- mdy_hm(crimeA$DateOccur)
+str(crimeA)
+```
+## create another date object  (****this one needs work - generating NAs***)
+```{r}
+crimeA$CodedMonth <- as_date(crimeA$CodedMonth)
+str(crimeA)
+```
+
+## Check the finalized data structure
+```{r}
+summary(crimeA)
+```
+
+##  Make the date format structures compatable and calculate the difference in days the reporting delays.
+```{r}
+crimeB <- crimeA %>% mutate(Reporting.diff = CodedMonth - as_date(DateOccur))
+
+```
+##  Check on details
+```{r}
+glimpse(crimeB)
+```
+
+```{r}
+## Now join neighborhoods with names
+#add neighborhood shapes to a data frame
+# From https://www.census.gov/geo/maps-data/data/cbf/cbf_state.html
+hoods.sf <- readOGR("St Louis Shape files/nbrhds_wards/BND_Nhd88_cw.shp")
+hoods.sf <- spTransform(hoods.sf, CRS("+proj=longlat +datum=WGS84"))
+hoods <- mapview(hoods.sf, map.types = c("OpenStreetMap"),
+                 layer.name = c("Neighborhoods"),
+                 alpha.regions = 0.1,
+                 alpha = 2,
+                 zcol = c("NHD_NAME"))             
+# collect neighborhood details from shape file
+hoods.df <- as(hoods.sf, "data.frame")
+
+```
+
+
+```{r}
+hoods.df %>% class()
+glimpse(hoods.df)
+```
+
+## Trim neighborheads for joins
+```{r}
+crimeC <- hoods.df  %>% select(NHD_NUM, NHD_NAME)
+crimeC$NHD_NUM <- as.integer(crimeC$NHD_NUM)
+str(crimeC)
+```
+##  This is the join for neighborhoods
+
+
+```{r}
+# join carkacks table with hoods table to get neighborhood names
+
+crimeD <- left_join(crimeB, crimeC, by = c("Neighborhood" = "NHD_NUM")) 
+
+glimpse(crimeD)
+```
+
+
+```{r}
+## Group by month and count for carjack
+crimeA %>% 
+  group_by(CodedMonth) %>%
+  count(CodedMonth) %>%
+  view()
+###################################
+```
+
+
+```{r}
+
+
+
+## Plot the count by month
+crimeA  %>% 
+  group_by(CodedMonth) %>%
+  count(CodedMonth) %>% 
+  ggplot(aes(x = CodedMonth, y = n)) +
+  geom_col(color = "cornflowerblue") +
+  theme(axis.text.x = element_text(angle = 90)) # change tex to verticle
+#################### (need to change legends)
+str(crimeA)
+```
+
+```{r}
+
+###########################################
+## Group by Neighborhood and count
+crimeD  %>% 
+  group_by(NHD_NAME) %>%
+  count(Neighborhood) %>%
+ view()
+#################################################
+
+```
+
+```{r}
+## Plot the count by month
+crimeD  %>% 
+  group_by(NHD_NAME) %>%
+  count(Neighborhood) %>% 
+  ggplot(aes(x = NHD_NAME, y = n)) +
+  geom_col(color = "cornflowerblue") +
+  theme(axis.text.x = element_text(angle = 90)) # change tex to verticle
+#################### (need to change legends)
+str(crimeD)
+```
+
+
+
+
+
+
+
+
+
+
